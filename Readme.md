@@ -36,11 +36,11 @@
 ```typescript
 export interface I18nResourceInterface {
   translation2: {
-    welcome2: string;
+    welcome2: "不可以2";
   };
   translation: {
-    welcome: string;
-    nope: string;
+    welcome: "你好";
+    nope: "不可以";
   };
 }
 ```

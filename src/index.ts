@@ -155,7 +155,7 @@ function genTypesFileContent(langs: LangsType, defaultLang: string): string {
     code += `\n  ${key}: {`;
 
     for (const _key of Object.keys(translationObj)) {
-      code += `\n    ${_key}: string;`;
+      code += `\n    ${_key}: "${translationObj[_key].replaceAll(`"`, "'")}";`;
     }
 
     code += "\n  };";
