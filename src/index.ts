@@ -12,6 +12,8 @@ type LangCode = string;
 type LangNS = string;
 type LangsType = Record<LangCode, Record<LangNS, Record<string, string>>>;
 
+const rebuild = debounce(_rebuild, 1000);
+
 export function GenI18nTypes(props: {
   watchFolder: string;
   outputFolder?: string;
@@ -19,7 +21,7 @@ export function GenI18nTypes(props: {
   typesFileName?: string;
   enumFileName?: string;
   defaultLang?: string;
-}): Plugin {
+}): Plugin[] {
   const {
     watchFolder,
     outputFolder = dirname(watchFolder),
@@ -29,70 +31,99 @@ export function GenI18nTypes(props: {
     defaultLang = "",
   } = props;
 
-  return {
-    name: "vite-gen-i18n-types",
-    apply: "serve",
+  const enumFilePath = resolve(outputFolder, enumFileName);
+  const typesFilePath = resolve(outputFolder, typesFileName);
 
-    configureServer({ watcher, config: { logger } }) {
-      const rebuild = debounce(_rebuild, 1000);
+  return [
+    {
+      name: "vite-gen-i18n-types",
+      apply: "serve",
 
-      const enumFilePath = resolve(outputFolder, enumFileName);
-      const typesFilePath = resolve(outputFolder, typesFileName);
+      configureServer({ watcher, config: { logger } }) {
+        watcher.unwatch([enumFilePath, typesFilePath]);
+        chokidar
+          .watch(`${props.watchFolder}/**/*.json`, {
+            depth: 2,
+          })
+          .on("all", build);
 
-      watcher.unwatch([enumFilePath, typesFilePath]);
-
-      chokidar
-        .watch(`${props.watchFolder}/**/*.json`, {
-          depth: 2,
-        })
-        .on("all", rebuild);
-
-      function _rebuild() {
-        const jsonGlob = `${props.watchFolder}/**/*.json`;
-        const jsonFiles = globSync(jsonGlob);
-        const langs: LangsType = {};
-
-        for (const filePath of jsonFiles) {
-          const lang = filePath.match(/\/locales\/([\w-]+)\//);
-          const filename = filePath.match(/\/([\w-_]+)\.json$/);
-
-          if (filename && lang) {
-            langs[lang[1]] = langs[lang[1]] || {};
-            try {
-              langs[lang[1]][filename[1]] = JSON.parse(
-                readFileSync(filePath, "utf-8"),
-              );
-            } catch (e: unknown) {
-              logger.error(
-                `${PLUGIN_NAME}: the file cannot be parse to json, path:${filePath}`,
-              );
-            }
-          } else {
-            logger.error(
-              `${PLUGIN_NAME}: the file cannot be parse to json, path:${filePath}`,
-            );
-          }
-        }
-
-        if (Object.keys(langs).length > 0) {
-          writeFileSync(
+        build();
+        function build() {
+          rebuild(
+            props.watchFolder,
             typesFilePath,
-            genTypesFileContent(langs, defaultLang),
-            "utf-8",
-          );
-
-          isGenEnumFile &&
-            writeFileSync(enumFilePath, genEnumFileContent(langs), "utf-8");
-
-          logger.info(`${PLUGIN_NAME}: gen successfully`);
-        } else {
-          logger.error(
-            `${PLUGIN_NAME}: Unable to read **/*.json files under ${jsonGlob}, please check if the path is correct.`,
+            defaultLang,
+            isGenEnumFile,
+            enumFilePath,
           );
         }
-      }
+      },
     },
-  };
+    {
+      name: "vite-gen-i18n-types-build",
+      apply: "build",
+      options() {
+        _rebuild(
+          props.watchFolder,
+          typesFilePath,
+          defaultLang,
+          isGenEnumFile,
+          enumFilePath,
+        );
+      },
+    },
+  ];
+}
+
+function _rebuild(
+  watchFolder: string,
+  typesFilePath: string,
+  defaultLang: string,
+  isGenEnumFile: boolean,
+  enumFilePath: string,
+) {
+  const jsonGlob = `${watchFolder}/**/*.json`;
+  const jsonFiles = globSync(jsonGlob);
+  const langs: LangsType = {};
+
+  for (const filePath of jsonFiles) {
+    const lang = filePath.match(/\/locales\/([\w-]+)\//);
+    const filename = filePath.match(/\/([\w-_]+)\.json$/);
+
+    if (filename && lang) {
+      langs[lang[1]] = langs[lang[1]] || {};
+      try {
+        langs[lang[1]][filename[1]] = JSON.parse(
+          readFileSync(filePath, "utf-8"),
+        );
+      } catch (e: unknown) {
+        console.error(
+          `${PLUGIN_NAME}: the file cannot be parse to json, path:${filePath}`,
+        );
+      }
+    } else {
+      console.error(
+        `${PLUGIN_NAME}: the file cannot be parse to json, path:${filePath}`,
+      );
+    }
+  }
+
+  if (Object.keys(langs).length > 0) {
+    writeFileSync(
+      typesFilePath,
+      genTypesFileContent(langs, defaultLang),
+      "utf-8",
+    );
+
+    isGenEnumFile &&
+      writeFileSync(enumFilePath, genEnumFileContent(langs), "utf-8");
+
+    console.info(`${PLUGIN_NAME}: gen successfully`);
+  } else {
+    console.error(
+      `${PLUGIN_NAME}: Unable to read **/*.json files under ${jsonGlob}, please check if the path is correct.`,
+    );
+  }
 }
 
 /**
